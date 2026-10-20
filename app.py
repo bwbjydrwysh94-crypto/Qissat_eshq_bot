@@ -5,20 +5,19 @@ import threading
 import time
 from bs4 import BeautifulSoup
 from flask import Flask
-import feedparser
 import requests
 from urllib.parse import urljoin
 
 app = Flask(__name__)
 
 # =========================
-# إعدادات البوت (ضع بياناتك هنا مباشرة)
+# إعدادات البوت
 # =========================
-BOT_TOKEN = "8598395244:AAGtNGGIMnVdCulcQ-EQLeR9bMugMgDd43g"
+BOT_TOKEN = "8598395244:AAGtNGGIMnVdCulcQ-EQLeR9bMugMgDd43g "
 CHANNEL_ID = "@Qissa_eshq"
-RSS_URL = "https://qeseh.net/"
+TARGET_URL = "https://qeseh.net/"
 
-CHECK_INTERVAL = 600
+CHECK_INTERVAL = 600  # فحص كل 10 دقائق
 DATABASE = "episodes.db"
 
 logging.basicConfig(
@@ -26,12 +25,17 @@ logging.basicConfig(
 )
 
 session = requests.Session()
-session.headers.update({"User-Agent": "SeriesUpdateBot/1.0"})
+session.headers.update({
+    "User-Agent": (
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML,"
+        " like Gecko) Chrome/120.0.0.0 Safari/537.36"
+    )
+})
 
 
 @app.route("/")
 def home():
-  return "Qissa Eshq Bot is running 24/7!"
+  return "Qissa Eshq Bot is running and monitoring!"
 
 
 # =========================
@@ -68,6 +72,12 @@ def save_episode(url, title):
             """,
         (url, title),
     )
+
+
+def is_db_empty():
+  with sqlite3.connect(DATABASE) as conn:
+    count = conn.execute("SELECT COUNT(*) FROM episodes").fetchone()[0]
+  return count == 0
 
 
 # =========================
@@ -120,42 +130,37 @@ def publish_episode(title, description, url, image_url=None):
 
 
 # =========================
-# قراءة بيانات الموقع
+# قراءة بيانات الموقع مباشرة
 # =========================
 
 
 def fetch_episodes():
-  if not RSS_URL:
+  if not TARGET_URL:
     return []
 
-  response = session.get(RSS_URL, timeout=30)
+  response = session.get(TARGET_URL, timeout=30)
   response.raise_for_status()
 
-  feed = feedparser.parse(response.content)
+  soup = BeautifulSoup(response.text, "html.parser")
   episodes = []
 
-  for entry in feed.entries:
-    url = entry.get("link", "").strip()
-    title = entry.get("title", "حلقة جديدة").strip()
-    description = entry.get("summary", "").strip()
-    image_url = None
+  # استخراج الروابط من الموقع (البحث عن الروابط التي قد تمثل حلقات أو مسلسلات)
+  for a in soup.find_all("a", href=True):
+    url = a["href"].strip()
+    title = a.get_text(strip=True)
 
-    if not url:
-      continue
+    # فلترة الروابط لتكون مقبولة وليست روابط فارغة أو عامة جداً
+    if url and title and len(title) > 4:
+      full_url = urljoin(TARGET_URL, url)
 
-    if description:
-      soup = BeautifulSoup(description, "html.parser")
-      image = soup.find("img")
-      if image and image.get("src"):
-        image_url = urljoin(url, image["src"])
-      description = soup.get_text(" ", strip=True)
-
-    episodes.append({
-        "title": title,
-        "description": description,
-        "url": url,
-        "image_url": image_url,
-    })
+      # تجنب التكرار داخل نفس القائمة المستخرجة
+      if not any(ep["url"] == full_url for ep in episodes):
+        episodes.append({
+            "title": title,
+            "description": "حلقة جديدة متاحة الآن على موقع قصة عشق.",
+            "url": full_url,
+            "image_url": None,
+        })
 
   return episodes
 
@@ -166,16 +171,25 @@ def fetch_episodes():
 
 
 def monitor():
+  first_run = is_db_empty()
+
   while True:
     try:
-      logging.info("فحص الحلقات الجديدة...")
+      logging.info("فحص الحلقات الجديدة من الموقع...")
       episodes = fetch_episodes()
 
       for episode in reversed(episodes):
         url = episode["url"]
+
         if is_published(url):
           continue
 
+        # إذا كانت التشغيلة الأولى، نقوم بحفظ الحلقات القديمة بصمت دون إرسالها لعدم إزعاج القناة
+        if first_run:
+          save_episode(url, episode["title"])
+          continue
+
+        # النشر في القناة إذا كانت حلقة جديدة حقاً بعد التشغيلة الأولى
         publish_episode(
             title=episode["title"],
             description=episode["description"],
@@ -183,7 +197,13 @@ def monitor():
             image_url=episode["image_url"],
         )
         save_episode(url, episode["title"])
-        logging.info("تم نشر: %s", episode["title"])
+        logging.info("تم نشر حلقة جديدة: %s", episode["title"])
+
+      if first_run:
+        logging.info(
+            "تمت أرشفة الحلقات القديمة بنجاح. سيتم الآن مراقبة أي جديد."
+        )
+        first_run = False
 
     except Exception:
       logging.exception("حدث خطأ أثناء المراقبة")
@@ -206,6 +226,7 @@ if __name__ == "__main__":
   t.daemon = True
   t.start()
 
-  # تشغيل سيرفر الويب لكي يستجيب Render ويفتح المنفذ
+  # تشغيل سيرفر الويب لكي يستجيب Render
   port = int(os.environ.get("PORT", 10000))
   app.run(host="0.0.0.0", port=port)
+ 
