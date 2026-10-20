@@ -1,4 +1,4 @@
-فخimport os
+import os
 import time
 import sqlite3
 import logging
