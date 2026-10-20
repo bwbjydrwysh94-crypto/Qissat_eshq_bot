@@ -1,4 +1,4 @@
-import os
+فخimport os
 import time
 import sqlite3
 import logging
@@ -12,8 +12,10 @@ from urllib.parse import urljoin
 # إعدادات البوت
 # =========================
 
-BOT_TOKEN = os.getenv("8598395244:AAGtNGGIMnVdCulcQ-EQLeR9bMugMgDd43g")
-CHANNEL_ID = os.getenv("@Qissa_eshq ")
+BOT_TOKEN = "8598395244:AAGtNGGIMnVdCulcQ-EQLeR9bMugMgDd43g"
+CHANNEL_ID = "@Qissa_eshq"
+RSS_URL = "https://qeseh.net/"
+
 
 # ضع رابط RSS صالحًا لمصدر تملكه أو لديك إذن باستخدامه.
 RSS_URL = os.getenv("RSS_URL", "")
